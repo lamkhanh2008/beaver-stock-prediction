@@ -135,6 +135,39 @@ def prepare_sequences_multi(df, lookback, forecast_days, f_scaler=None, t_scaler
     return np.array(X_list, dtype=np.float32), np.array(y_list, dtype=np.float32), f_scaler, t_scaler
 
 # --- 3. Training Logic ---
+def eval_epoch_loss(model, data_loader, criterion, device):
+    if data_loader is None or len(data_loader) == 0:
+        return None
+    model.eval()
+    total_loss = 0.0
+    with torch.no_grad():
+        for b_x, b_y in data_loader:
+            b_x, b_y = b_x.to(device), b_y.to(device)
+            pred = model(b_x)
+            loss = criterion(pred, b_y)
+            total_loss += loss.item()
+    return total_loss / len(data_loader)
+
+def predict_batches(model, data_loader, device):
+    if data_loader is None or len(data_loader) == 0:
+        return np.array([])
+    model.eval()
+    preds = []
+    with torch.no_grad():
+        for b_x, _ in data_loader:
+            b_x = b_x.to(device)
+            pred = model(b_x)
+            preds.append(pred.cpu().numpy())
+    return np.concatenate(preds, axis=0) if preds else np.array([])
+
+def save_model_weights(model, save_path):
+    if not save_path:
+        return
+    save_dir = os.path.dirname(save_path)
+    if save_dir:
+        os.makedirs(save_dir, exist_ok=True)
+    torch.save(model.state_dict(), save_path)
+
 def train(args):
     # Load data
     if not os.path.exists(args.data_file):
@@ -149,19 +182,35 @@ def train(args):
     date_col = 'Date' if 'Date' in df.columns else df.columns[0]
     df['Date'] = pd.to_datetime(df[date_col])
     
-    # Split Train/Test
-    train_frames, test_frames = [], []
+    # Split Train/Val/Test
+    train_frames, val_frames, test_frames = [], [], []
     for sym, group in df.groupby('Symbol'):
         group = group.sort_values('Date')
         split_idx = int(len(group) * args.train_ratio)
-        train_frames.append(group.iloc[:split_idx])
+        train_full = group.iloc[:split_idx]
         test_frames.append(group.iloc[split_idx:])
+
+        if args.val_ratio > 0:
+            val_split_idx = int(len(train_full) * (1 - args.val_ratio))
+            if 0 < val_split_idx < len(train_full):
+                train_frames.append(train_full.iloc[:val_split_idx])
+                val_frames.append(train_full.iloc[val_split_idx:])
+            else:
+                train_frames.append(train_full)
+        else:
+            train_frames.append(train_full)
         
     train_df = pd.concat(train_frames)
-    test_df = pd.concat(test_frames)
+    val_df = pd.concat(val_frames) if val_frames else None
+    test_df = pd.concat(test_frames) if test_frames else None
     
     X_train, y_train, f_scaler, t_scaler = prepare_sequences_multi(train_df, args.lookback, args.forecast_days)
-    X_test, y_test, _, _ = prepare_sequences_multi(test_df, args.lookback, args.forecast_days, f_scaler, t_scaler)
+    X_val, y_val, _, _ = (None, None, f_scaler, t_scaler)
+    if val_df is not None and not val_df.empty:
+        X_val, y_val, _, _ = prepare_sequences_multi(val_df, args.lookback, args.forecast_days, f_scaler, t_scaler)
+    X_test, y_test, _, _ = (None, None, f_scaler, t_scaler)
+    if test_df is not None and not test_df.empty:
+        X_test, y_test, _, _ = prepare_sequences_multi(test_df, args.lookback, args.forecast_days, f_scaler, t_scaler)
     
     if X_train is None:
         print("Error: Not enough data.")
@@ -170,6 +219,14 @@ def train(args):
     # Dataloader
     train_loader = DataLoader(TensorDataset(torch.from_numpy(X_train), torch.from_numpy(y_train)), 
                               batch_size=args.batch_size, shuffle=True)
+    val_loader = None
+    if X_val is not None and len(X_val) > 0:
+        val_loader = DataLoader(TensorDataset(torch.from_numpy(X_val), torch.from_numpy(y_val)),
+                                batch_size=args.batch_size, shuffle=False)
+    test_loader = None
+    if X_test is not None and len(X_test) > 0:
+        test_loader = DataLoader(TensorDataset(torch.from_numpy(X_test), torch.from_numpy(y_test)),
+                                 batch_size=args.batch_size, shuffle=False)
     
     # Device Detection (Support Apple Silicon MPS)
     if torch.backends.mps.is_available():
@@ -191,6 +248,15 @@ def train(args):
     print(f"--- Training Hybrid Model ---")
     print(f"Device: {device}")
     print(f"Epochs: {args.epochs}")
+    print(f"Train samples: {len(X_train)}")
+    if val_loader is not None:
+        print(f"Val samples: {len(X_val)}")
+    if test_loader is not None:
+        print(f"Test samples: {len(X_test)}")
+
+    best_metric = float("inf")
+    best_epoch = 0
+    best_tag = "val" if val_loader is not None else "train"
     
     for epoch in range(args.epochs):
         model.train()
@@ -204,19 +270,32 @@ def train(args):
             optimizer.step()
             total_loss += loss.item()
         
-        if (epoch+1) % 5 == 0:
-            print(f"Epoch {epoch+1}/{args.epochs}, Loss: {total_loss/len(train_loader):.6f}")
+        train_loss = total_loss / len(train_loader)
+        val_loss = eval_epoch_loss(model, val_loader, criterion, device)
+        metric = val_loss if val_loss is not None else train_loss
+        if args.save_path and metric < best_metric:
+            best_metric = metric
+            best_epoch = epoch + 1
+            save_model_weights(model, args.save_path)
+            print(f"Saved best model to {args.save_path} (epoch {best_epoch}, {best_tag} loss {best_metric:.6f})")
+        if val_loss is None:
+            print(f"Epoch {epoch+1}/{args.epochs}, Train Loss: {train_loss:.6f}")
+        else:
+            print(f"Epoch {epoch+1}/{args.epochs}, Train Loss: {train_loss:.6f}, Val Loss: {val_loss:.6f}")
 
     # Evaluation
     model.eval()
-    if X_test is not None and len(X_test) > 0:
-        with torch.no_grad():
-            X_test_t = torch.from_numpy(X_test).to(device)
-            preds = model(X_test_t).cpu().numpy()
+    if test_loader is not None:
+        test_loss = eval_epoch_loss(model, test_loader, criterion, device)
+        preds = predict_batches(model, test_loader, device)
+        if preds.size > 0:
             actual_prices = t_scaler.inverse_transform(y_test)
             pred_prices = t_scaler.inverse_transform(preds)
             mae = np.mean(np.abs(actual_prices - pred_prices))
-            print(f"\nFinal Test MAE: {mae:.2f}")
+            print(f"\nFinal Test Loss (Huber): {test_loss:.6f}")
+            print(f"Final Test MAE: {mae:.2f}")
+        else:
+            print("\nFinal Test Loss: N/A (no test predictions)")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -225,9 +304,11 @@ if __name__ == "__main__":
     parser.add_argument("--lookback", type=int, default=30)
     parser.add_argument("--forecast-days", type=int, default=1)
     parser.add_argument("--train-ratio", type=float, default=0.8)
+    parser.add_argument("--val-ratio", type=float, default=0.1)
     parser.add_argument("--hidden-size", type=int, default=64)
     parser.add_argument("--epochs", type=int, default=50)
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--lr", type=float, default=0.001)
+    parser.add_argument("--save-path", default="./checkpoints/best_hybrid.pt")
     args = parser.parse_args()
     train(args)
