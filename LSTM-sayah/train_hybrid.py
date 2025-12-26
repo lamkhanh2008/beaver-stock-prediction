@@ -168,6 +168,17 @@ def save_model_weights(model, save_path):
         os.makedirs(save_dir, exist_ok=True)
     torch.save(model.state_dict(), save_path)
 
+def load_model_weights(model, load_path, device):
+    if not load_path:
+        return False
+    if not os.path.exists(load_path):
+        print(f"Error: load path not found: {load_path}")
+        return False
+    state = torch.load(load_path, map_location=device)
+    model.load_state_dict(state)
+    print(f"Loaded weights from {load_path}")
+    return True
+
 def train(args):
     # Load data
     if not os.path.exists(args.data_file):
@@ -241,9 +252,11 @@ def train(args):
         hidden_size=args.hidden_size,
         forecast_days=args.forecast_days
     ).to(device)
-    
+
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     criterion = nn.HuberLoss()
+
+    loaded = load_model_weights(model, args.load_path, device)
     
     print(f"--- Training Hybrid Model ---")
     print(f"Device: {device}")
@@ -254,34 +267,38 @@ def train(args):
     if test_loader is not None:
         print(f"Test samples: {len(X_test)}")
 
-    best_metric = float("inf")
-    best_epoch = 0
-    best_tag = "val" if val_loader is not None else "train"
-    
-    for epoch in range(args.epochs):
-        model.train()
-        total_loss = 0
-        for b_x, b_y in train_loader:
-            b_x, b_y = b_x.to(device), b_y.to(device)
-            optimizer.zero_grad()
-            pred = model(b_x)
-            loss = criterion(pred, b_y)
-            loss.backward()
-            optimizer.step()
-            total_loss += loss.item()
+    if not args.test_only:
+        best_metric = float("inf")
+        best_epoch = 0
+        best_tag = "val" if val_loader is not None else "train"
         
-        train_loss = total_loss / len(train_loader)
-        val_loss = eval_epoch_loss(model, val_loader, criterion, device)
-        metric = val_loss if val_loss is not None else train_loss
-        if args.save_path and metric < best_metric:
-            best_metric = metric
-            best_epoch = epoch + 1
-            save_model_weights(model, args.save_path)
-            print(f"Saved best model to {args.save_path} (epoch {best_epoch}, {best_tag} loss {best_metric:.6f})")
-        if val_loss is None:
-            print(f"Epoch {epoch+1}/{args.epochs}, Train Loss: {train_loss:.6f}")
-        else:
-            print(f"Epoch {epoch+1}/{args.epochs}, Train Loss: {train_loss:.6f}, Val Loss: {val_loss:.6f}")
+        for epoch in range(args.epochs):
+            model.train()
+            total_loss = 0
+            for b_x, b_y in train_loader:
+                b_x, b_y = b_x.to(device), b_y.to(device)
+                optimizer.zero_grad()
+                pred = model(b_x)
+                loss = criterion(pred, b_y)
+                loss.backward()
+                optimizer.step()
+                total_loss += loss.item()
+            
+            train_loss = total_loss / len(train_loader)
+            val_loss = eval_epoch_loss(model, val_loader, criterion, device)
+            metric = val_loss if val_loss is not None else train_loss
+            if args.save_path and metric < best_metric:
+                best_metric = metric
+                best_epoch = epoch + 1
+                save_model_weights(model, args.save_path)
+                print(f"Saved best model to {args.save_path} (epoch {best_epoch}, {best_tag} loss {best_metric:.6f})")
+            if val_loss is None:
+                print(f"Epoch {epoch+1}/{args.epochs}, Train Loss: {train_loss:.6f}")
+            else:
+                print(f"Epoch {epoch+1}/{args.epochs}, Train Loss: {train_loss:.6f}, Val Loss: {val_loss:.6f}")
+    elif not loaded:
+        print("Error: --test-only requires --load-path.")
+        return
 
     # Evaluation
     model.eval()
@@ -310,5 +327,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--lr", type=float, default=0.001)
     parser.add_argument("--save-path", default="./checkpoints/best_hybrid.pt")
+    parser.add_argument("--load-path", default=None)
+    parser.add_argument("--test-only", action="store_true")
     args = parser.parse_args()
     train(args)
