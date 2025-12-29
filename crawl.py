@@ -43,10 +43,21 @@ class VNStockCrawler:
         timestamp_to = int(now.timestamp())
         
         return timestamp_from, timestamp_to, start_date, now
+
+    def get_timestamp_range_from_dates(self, start_date: str, end_date: str) -> tuple:
+        """Tính timestamp từ 2 ngày cụ thể (YYYY-MM-DD)."""
+        start_dt = datetime.datetime.strptime(start_date, "%Y-%m-%d")
+        end_dt = datetime.datetime.strptime(end_date, "%Y-%m-%d")
+        start_dt = start_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_dt = end_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+        if end_dt < start_dt:
+            raise ValueError("end_date must be >= start_date")
+        return int(start_dt.timestamp()), int(end_dt.timestamp()), start_dt, end_dt
     
     def fetch_stock_data(self, symbol: str, resolution: str = "1D", 
                         timestamp_from: int = None, timestamp_to: int = None,
-                        years_back: int = 3) -> Optional[Dict]:
+                        years_back: int = 3, start_date: str = None,
+                        end_date: str = None) -> Optional[Dict]:
         """
         Fetch dữ liệu từ API
         
@@ -56,15 +67,22 @@ class VNStockCrawler:
             timestamp_from: Timestamp bắt đầu
             timestamp_to: Timestamp kết thúc
             years_back: Số năm lùi lại (nếu không có timestamp)
+            start_date: Ngày bắt đầu (YYYY-MM-DD)
+            end_date: Ngày kết thúc (YYYY-MM-DD)
         
         Returns:
             Response data hoặc None nếu lỗi
         """
         # Tính timestamp nếu chưa có
-        if timestamp_from is None or timestamp_to is None:
+        if start_date or end_date:
+            if not start_date or not end_date:
+                print("  ❌ Cần cả start_date và end_date (YYYY-MM-DD)")
+                return None
+            ts_from, ts_to, _, _ = self.get_timestamp_range_from_dates(start_date, end_date)
+        else:
             ts_from, ts_to, _, _ = self.get_timestamp_range(years_back)
-            timestamp_from = timestamp_from or ts_from
-            timestamp_to = timestamp_to or ts_to
+        timestamp_from = timestamp_from or ts_from
+        timestamp_to = timestamp_to or ts_to
         
         # Headers mặc định
         request_headers = {
@@ -282,7 +300,8 @@ class VNStockCrawler:
         return filename
     
     def crawl_and_save(self, symbol: str, api_key: str = None, years_back: int = 3, 
-                      resolution: str = "1D") -> Optional[str]:
+                      resolution: str = "1D", start_date: str = None,
+                      end_date: str = None) -> Optional[str]:
         """
         Crawl và lưu dữ liệu cho một mã cổ phiếu
         
@@ -290,7 +309,13 @@ class VNStockCrawler:
             Đường dẫn file CSV hoặc None nếu lỗi
         """
         # Fetch data
-        data = self.fetch_stock_data(symbol, resolution=resolution, years_back=years_back)
+        data = self.fetch_stock_data(
+            symbol,
+            resolution=resolution,
+            years_back=years_back,
+            start_date=start_date,
+            end_date=end_date,
+        )
         
         if data is None:
             return None
@@ -307,7 +332,8 @@ class VNStockCrawler:
         return filename
     
     def crawl_multiple_symbols(self, symbols: list, years_back: int = 3,
-                               delay: float = 1.0) -> Dict[str, str]:
+                               delay: float = 1.0, start_date: str = None,
+                               end_date: str = None) -> Dict[str, str]:
         """
         Crawl nhiều mã cổ phiếu
         
@@ -329,7 +355,13 @@ class VNStockCrawler:
         for i, symbol in enumerate(symbols):
             print(f"[{i+1}/{len(symbols)}] Processing {symbol}...")
             
-            filename = self.crawl_and_save(symbol, api_key=API_KEY, years_back=years_back)
+            filename = self.crawl_and_save(
+                symbol,
+                api_key=API_KEY,
+                years_back=years_back,
+                start_date=start_date,
+                end_date=end_date,
+            )
             
             if filename:
                 results[symbol] = filename
@@ -386,6 +418,8 @@ if __name__ == "__main__":
     # Cấu hình
     HOST = "https://price.beaverx.ai"
     YEARS_BACK = 5
+    START_DATE = os.getenv("START_DATE")
+    END_DATE = os.getenv("END_DATE")
     
     # Lấy API key từ environment variable
     API_KEY = os.getenv('API_KEY') or os.getenv('BEAVERX_API_KEY')
@@ -413,14 +447,23 @@ if __name__ == "__main__":
         print(f"  {', '.join(SYMBOLS)}")
     else:
         print(f"  {', '.join(SYMBOLS[:10])}... và {len(SYMBOLS)-10} mã khác")
-    print(f"Years back: {YEARS_BACK}")
+    if START_DATE and END_DATE:
+        print(f"Date range: {START_DATE} -> {END_DATE}")
+    else:
+        print(f"Years back: {YEARS_BACK}")
     print("=" * 60)
     print()
     
     # Tạo crawler với API key
     crawler = VNStockCrawler(host=HOST, output_dir="data", api_key=API_KEY)
     
-    results = crawler.crawl_multiple_symbols(SYMBOLS, years_back=YEARS_BACK, delay=1.0)
+    results = crawler.crawl_multiple_symbols(
+        SYMBOLS,
+        years_back=YEARS_BACK,
+        delay=1.0,
+        start_date=START_DATE,
+        end_date=END_DATE,
+    )
     
     if results:
         print(f"\n{'='*60}")
