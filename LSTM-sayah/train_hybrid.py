@@ -250,10 +250,10 @@ def train(args):
     model = CNNLSTMAttention(
         input_size=X_train.shape[2], 
         hidden_size=args.hidden_size,
-        forecast_days=args.forecast_days
+        forecast_days=args.forecast_days,
+        dropout=args.dropout
     ).to(device)
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     criterion = nn.HuberLoss()
 
     loaded = load_model_weights(model, args.load_path, device)
@@ -267,10 +267,26 @@ def train(args):
     if test_loader is not None:
         print(f"Test samples: {len(X_test)}")
 
+    optimizer = None
+    scheduler = None
+    best_epoch = 0
     if not args.test_only:
+        optimizer = torch.optim.Adam(
+            model.parameters(),
+            lr=args.lr,
+            weight_decay=args.weight_decay
+        )
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer,
+            mode="min",
+            factor=args.lr_factor,
+            patience=args.lr_patience,
+            min_lr=args.min_lr
+        )
         best_metric = float("inf")
         best_epoch = 0
         best_tag = "val" if val_loader is not None else "train"
+        bad_epochs = 0
         
         for epoch in range(args.epochs):
             model.train()
@@ -287,20 +303,35 @@ def train(args):
             train_loss = total_loss / len(train_loader)
             val_loss = eval_epoch_loss(model, val_loader, criterion, device)
             metric = val_loss if val_loss is not None else train_loss
-            if args.save_path and metric < best_metric:
+            improved = metric < (best_metric - args.min_delta)
+            if improved:
                 best_metric = metric
                 best_epoch = epoch + 1
                 save_model_weights(model, args.save_path)
                 print(f"Saved best model to {args.save_path} (epoch {best_epoch}, {best_tag} loss {best_metric:.6f})")
+                bad_epochs = 0
+            else:
+                bad_epochs += 1
+            if scheduler is not None:
+                prev_lr = optimizer.param_groups[0]["lr"]
+                scheduler.step(metric)
+                new_lr = optimizer.param_groups[0]["lr"]
+                if new_lr < prev_lr:
+                    print(f"LR reduced to {new_lr:.6g}")
             if val_loss is None:
                 print(f"Epoch {epoch+1}/{args.epochs}, Train Loss: {train_loss:.6f}")
             else:
                 print(f"Epoch {epoch+1}/{args.epochs}, Train Loss: {train_loss:.6f}, Val Loss: {val_loss:.6f}")
+            if args.early_stop_patience > 0 and bad_epochs >= args.early_stop_patience:
+                print(f"Early stopping at epoch {epoch+1} (best {best_tag} loss {best_metric:.6f})")
+                break
     elif not loaded:
         print("Error: --test-only requires --load-path.")
         return
 
     # Evaluation
+    if not args.test_only and best_epoch > 0 and args.save_path and os.path.exists(args.save_path):
+        load_model_weights(model, args.save_path, device)
     model.eval()
     if test_loader is not None:
         test_loss = eval_epoch_loss(model, test_loader, criterion, device)
@@ -326,6 +357,13 @@ if __name__ == "__main__":
     parser.add_argument("--epochs", type=int, default=50)
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--lr", type=float, default=0.001)
+    parser.add_argument("--dropout", type=float, default=0.3)
+    parser.add_argument("--weight-decay", type=float, default=1e-4)
+    parser.add_argument("--lr-factor", type=float, default=0.5)
+    parser.add_argument("--lr-patience", type=int, default=3)
+    parser.add_argument("--min-lr", type=float, default=1e-6)
+    parser.add_argument("--early-stop-patience", type=int, default=8)
+    parser.add_argument("--min-delta", type=float, default=0.0)
     parser.add_argument("--save-path", default="./checkpoints/best_hybrid.pt")
     parser.add_argument("--load-path", default=None)
     parser.add_argument("--test-only", action="store_true")
