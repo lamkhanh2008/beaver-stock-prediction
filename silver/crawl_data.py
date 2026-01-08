@@ -13,8 +13,9 @@ def get_stooq_data(symbol):
         if response.status_code == 200 and "Date,Open" in response.text:
             df = pd.read_csv(StringIO(response.text))
             df['Date'] = pd.to_datetime(df['Date'])
-            one_year_ago = datetime.now() - timedelta(days=365)
-            df = df[df['Date'] >= one_year_ago]
+            # Lấy 2 năm dữ liệu (khoảng 730 ngày) để có đủ lịch sử cho 2024
+            two_years_ago = datetime.now() - timedelta(days=730)
+            df = df[df['Date'] >= two_years_ago]
             return df[['Date', 'Close']].rename(columns={'Close': symbol})
         return pd.DataFrame()
     except Exception as e:
@@ -57,10 +58,10 @@ def crawl_all_silver_macro():
         
         # Merge local data
         local_data = pd.merge(macro_local[['Date', 'dxy', 'us_10y_yield', 'gold_usd']], 
-                              usdvnd_local, on='Date', how='inner')
+                              usdvnd_local, on='Date', how='outer') # Dùng outer để lấy đủ ngày vĩ mô
         
         # Merge with Silver
-        final_df = pd.merge(silver_df, local_data, on='Date', how='inner')
+        final_df = pd.merge(silver_df, local_data, on='Date', how='outer') # Dùng outer để không mất ngày cuối tuần
         
     except Exception as e:
         print(f"⚠️ Không thể nạp dữ liệu local: {e}. Đang thử lấy Gold dự phòng từ Stooq...")
@@ -71,6 +72,12 @@ def crawl_all_silver_macro():
             final_df = silver_df
 
     # 3. Làm sạch & Lưu
+    # Tạo khung ngày liên tục để đảm bảo không mất ngày nào
+    if not final_df.empty:
+        all_dates = pd.date_range(start=final_df['Date'].min(), end=final_df['Date'].max())
+        date_df = pd.DataFrame({'Date': all_dates})
+        final_df = pd.merge(date_df, final_df, on='Date', how='left')
+        
     final_df = final_df.sort_values('Date').ffill().bfill()
     os.makedirs("silver/data", exist_ok=True)
     final_df.to_csv("silver/data/raw_macro.csv", index=False)

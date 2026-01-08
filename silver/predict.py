@@ -50,11 +50,19 @@ def predict_silver_hybrid():
     if os.path.exists(MODEL_PATH):
         bundle = joblib.load(MODEL_PATH)
         model = bundle['model']
+        selector = bundle.get('selector') # V7 có selector
         feat_names = bundle['feature_names']
         
         X = last_row[feat_names].to_frame().T
-        ml_dir = model.predict(X)[0]
-        ml_prob = model.predict_proba(X)[0]
+        
+        # Nếu có selector (V7), phải transform dữ liệu trước khi predict
+        if selector:
+            X_input = selector.transform(X)
+        else:
+            X_input = X
+            
+        ml_dir = model.predict(X_input)[0]
+        ml_prob = model.predict_proba(X_input)[0]
     
     # 4. Final Decision
     ml_conf = np.max(ml_prob)

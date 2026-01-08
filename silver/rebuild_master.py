@@ -15,9 +15,9 @@ def rebuild_silver_master():
     df = pd.read_csv(os.path.join(BASE_PATH, "raw_macro.csv"))
     df['Date'] = pd.to_datetime(df['Date'])
     
-    # 2. Tạo khung thời gian liên tục 365 ngày (để tránh mất ngày lễ/cuối tuần)
+    # 2. Tạo khung thời gian liên tục từ ngày đầu đến ngày cuối của dữ liệu
+    start_date = df['Date'].min()
     end_date = df['Date'].max()
-    start_date = end_date - timedelta(days=364)
     all_dates = pd.date_range(start=start_date, end=end_date)
     master_df = pd.DataFrame({'date': all_dates})
     
