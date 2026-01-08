@@ -3,7 +3,7 @@ import os
 from datetime import datetime, timedelta
 
 def update_auxiliary_files():
-    print("🚀 Đang đồng bộ hóa tất cả các file dữ liệu vĩ mô và tỷ giá đến ngày 04/01/2026...")
+    print("🚀 Đang đồng bộ hóa tất cả các file dữ liệu vĩ mô và tỷ giá đến ngày 06/01/2026...")
     
     BASE_PATH = "gold/gold/data"
     files_to_update = {
@@ -12,7 +12,7 @@ def update_auxiliary_files():
         "world_gold_real_vnd.csv": ["date", "price_usd", "fx_rate", "price_vnd_tael"]
     }
     
-    target_dates = ["2026-01-02", "2026-01-03", "2026-01-04"]
+    target_dates = ["2026-01-02", "2026-01-03", "2026-01-04", "2026-01-05", "2026-01-06", "2026-01-07"]
     
     for filename, headers in files_to_update.items():
         file_path = os.path.join(BASE_PATH, filename)
