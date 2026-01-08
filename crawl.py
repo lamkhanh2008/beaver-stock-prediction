@@ -7,8 +7,16 @@ import pandas as pd
 import json
 import time
 import os
+import sys
 from typing import Optional, Dict
 
+# Import API keys from config
+try:
+    sys.path.append(os.path.abspath(os.path.dirname(__file__)))
+    from config.settings import BEAVERX_API_KEY
+except ImportError:
+    print("⚠️ Cảnh báo: Không tìm thấy config/settings.py. Vui lòng tạo file từ settings_example.py")
+    BEAVERX_API_KEY = os.getenv('API_KEY') or os.getenv('BEAVERX_API_KEY') or ""
 
 class VNStockCrawler:
     """Class để crawl dữ liệu cổ phiếu Việt Nam"""
@@ -24,11 +32,11 @@ class VNStockCrawler:
         self.output_dir = output_dir
         os.makedirs(output_dir, exist_ok=True)
         
-        # Lấy API key từ parameter hoặc environment variable
+        # Lấy API key từ parameter hoặc config/environment variable
         if api_key:
             self.api_key = api_key
         else:
-            self.api_key = os.getenv('API_KEY') or os.getenv('BEAVERX_API_KEY')
+            self.api_key = BEAVERX_API_KEY
         
     def get_timestamp_range(self, years_back: int = 3) -> tuple:
         """Tính timestamp từ hiện tại đến N năm trước"""

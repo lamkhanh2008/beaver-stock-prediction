@@ -1,9 +1,17 @@
 import os
 import requests
 import csv
+import sys
 from datetime import datetime
 
-FRED_API_KEY = "43a0e050800d984180410710609b78a4"
+# Import API keys from config
+try:
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+    from config.settings import FRED_API_KEY
+except ImportError:
+    print("⚠️ Cảnh báo: Không tìm thấy config/settings.py. Vui lòng tạo file từ settings_example.py")
+    FRED_API_KEY = os.getenv("FRED_API_KEY", "")
+
 
 def fetch_fred_data(series_id):
     url = f"https://api.stlouisfed.org/fred/series/observations?series_id={series_id}&api_key={FRED_API_KEY}&file_type=json&sort_order=desc&limit=1"

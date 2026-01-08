@@ -4,6 +4,15 @@ Lấy danh sách mã chứng khoán VN30 từ API
 import requests
 import json
 import os
+import sys
+
+# Import API keys from config
+try:
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+    from config.settings import BEAVERX_API_KEY
+except ImportError:
+    print("⚠️ Cảnh báo: Không tìm thấy config/settings.py. Vui lòng tạo file từ settings_example.py")
+    BEAVERX_API_KEY = os.getenv('API_KEY') or os.getenv('BEAVERX_API_KEY') or ""
 
 
 def get_vn30_symbols(host: str, api_key: str = None, headers: dict = None) -> list:
@@ -81,8 +90,8 @@ def get_vn30_symbols(host: str, api_key: str = None, headers: dict = None) -> li
 if __name__ == "__main__":
     HOST = "https://price.beaverx.ai"
     
-    # Lấy API key từ environment variable
-    API_KEY = os.getenv('API_KEY') or os.getenv('BEAVERX_API_KEY')
+    # Lấy API key từ config/environment variable
+    API_KEY = BEAVERX_API_KEY
     
     # Hoặc hardcode (chỉ để test, không khuyến nghị)
     # API_KEY = "your-api-key-here"

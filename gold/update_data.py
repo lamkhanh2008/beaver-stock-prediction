@@ -1,10 +1,19 @@
 import os
 import requests
 import csv
+import sys
 from datetime import datetime
 
-# --- CẤU HÌNH QUỐC TẾ ---
-FRED_API_KEY = "43a0e050800d984180410710609b78a4"
+# Import API keys from config
+try:
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+    from config.settings import FRED_API_KEY
+except ImportError:
+    print("⚠️ Cảnh báo: Không tìm thấy config/settings.py. Vui lòng tạo file từ settings_example.py")
+    FRED_API_KEY = os.getenv("FRED_API_KEY", "")
+
+
+# --- CẤU HÌNH ---
 MASTER_FILE = os.path.join("gold", "gold", "data", "gold_master_history.csv")
 
 def fetch_fred(series_id):

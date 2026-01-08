@@ -1,6 +1,15 @@
 import os
+import sys
 import requests
 import pandas as pd
+
+# Import API keys from config
+try:
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+    from config.settings import BEAVERX_API_KEY
+except ImportError:
+    print("⚠️ Cảnh báo: Không tìm thấy config/settings.py. Vui lòng tạo file từ settings_example.py")
+    BEAVERX_API_KEY = os.getenv("GOLD_API_KEY") or os.getenv("API_KEY") or ""
 
 
 def parse_world_section(data):
@@ -63,7 +72,7 @@ def crawl_nhantron(host: str, output_path: str, period: str = "1m", api_key: str
 
 if __name__ == "__main__":
     HOST = os.getenv("GOLD_HOST", "https://price.beaverx.ai")
-    API_KEY = os.getenv("GOLD_API_KEY") or os.getenv("API_KEY")
+    API_KEY = BEAVERX_API_KEY
     PERIOD = os.getenv("GOLD_PERIOD", "1m")
     OUTPUT = os.getenv("GOLD_NHANTRON_PATH", "gold/data/nhantron.csv")
     crawl_nhantron(HOST, OUTPUT, period=PERIOD, api_key=API_KEY)

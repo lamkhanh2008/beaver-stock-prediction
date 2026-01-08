@@ -1,8 +1,17 @@
 import os
+import sys
 import argparse
 import requests
 import pandas as pd
 from datetime import datetime, timezone
+
+# Import API keys from config
+try:
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+    from config.settings import BEAVERX_API_KEY
+except ImportError:
+    print("⚠️ Cảnh báo: Không tìm thấy config/settings.py. Vui lòng tạo file từ settings_example.py")
+    BEAVERX_API_KEY = os.getenv("GOLD_API_KEY") or os.getenv("API_KEY") or ""
 
 
 def parse_sjc_response(data):
@@ -111,7 +120,7 @@ if __name__ == "__main__":
     parser.add_argument("--host", default=os.getenv("GOLD_HOST", "https://price.beaverx.ai"))
     parser.add_argument("--output", default=os.getenv("GOLD_SJC_PATH", "gold/gold/data/sjc.csv"))
     parser.add_argument("--period", default=os.getenv("GOLD_PERIOD", "1m"), help="e.g. 1m, 3m, 6m, 1y")
-    parser.add_argument("--api-key", default=os.getenv("GOLD_API_KEY") or os.getenv("API_KEY"))
+    parser.add_argument("--api-key", default=BEAVERX_API_KEY)
     parser.add_argument("--start", help="Ngày bắt đầu (YYYY-MM-DD)")
     parser.add_argument("--end", help="Ngày kết thúc (YYYY-MM-DD)")
     args = parser.parse_args()

@@ -1,9 +1,17 @@
 import os
 import requests
 import csv
+import sys
 
-# API lấy lịch sử 1 năm
-FRED_API_KEY = "43a0e050800d984180410710609b78a4"
+# Import API keys from config
+try:
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+    from config.settings import FRED_API_KEY
+except ImportError:
+    print("⚠️ Cảnh báo: Không tìm thấy config/settings.py. Vui lòng tạo file từ settings_example.py")
+    FRED_API_KEY = os.getenv("FRED_API_KEY", "")
+
+
 MASTER_FILE = os.path.join("gold", "gold", "data", "gold_master_history.csv")
 
 def fix_all_history():
